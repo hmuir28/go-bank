@@ -47,8 +47,8 @@ func (s *APIServer) Run() {
 	router := mux.NewRouter()
 
 	router.HandleFunc("/account", makeHttpHandleFunc(s.handleAccount))
-	router.HandleFunc("/account/{id}", makeHttpHandleFunc(s.handleGetAccountById))
-	router.HandleFunc("/transfer", makeHttpHandleFunc(s.handleGetAccountById))
+	router.HandleFunc("/account/{id}", makeHttpHandleFunc(s.handleAccountById))
+	router.HandleFunc("/transfer", makeHttpHandleFunc(s.handleTransfer))
 
 	log.Println("JSON API server running on port: ", s.listenAddr)
 
@@ -57,7 +57,7 @@ func (s *APIServer) Run() {
 
 func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == "GET" {
-		return s.handleGetAccounta(w, r)
+		return s.handleGetAccount(w, r)
 	}
 
 	if r.Method == "POST" {
@@ -65,13 +65,14 @@ func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error 
 	}
 
 	if r.Method == "DELETE" {
+		fmt.Println("=====-wowndown")
 		return s.handleDeleteAccount(w, r)
 	}
 
 	return fmt.Errorf("method not allowed %s", r.Method)
 }
 
-func (s *APIServer) handleGetAccounta(w http.ResponseWriter, r *http.Request) error {
+func (s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) error {
 	accounts, err := s.store.GetAccounts()
 
 	if err != nil {
@@ -81,27 +82,24 @@ func (s *APIServer) handleGetAccounta(w http.ResponseWriter, r *http.Request) er
 	return writeJSON(w, http.StatusOK, accounts)
 }
 
-func (s *APIServer) handleGetAccountById(w http.ResponseWriter, r *http.Request) error {
-	idStr := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idStr)
-
-	if err != nil {
-		return fmt.Errorf("invalid id given %s", idStr)
+func (s *APIServer) handleAccountById(w http.ResponseWriter, r *http.Request) error {
+	if r.Method == "GET" {
+		return s.handleGetAccountById(w, r)
 	}
 
-	account, err := s.store.GetAccountById(id)
-
-	if err != nil {
-		return err
+	if r.Method == "PUT" {
+		return s.handleUpdateAccount(w, r)
 	}
 
-	fmt.Println(id)
+	if r.Method == "DELETE" {
+		return s.handleDeleteAccount(w, r)
+	}
 
-	return writeJSON(w, http.StatusOK, account)
+	return fmt.Errorf("method not allowed %s", r.Method)
 }
 
 func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) error {
-	createAccountRequest := new(CreateAccountRequest)
+	createAccountRequest := new(AccountRequest)
 
 	if err := json.NewDecoder(r.Body).Decode(createAccountRequest); err != nil {
 		return err
@@ -116,8 +114,65 @@ func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 	return writeJSON(w, http.StatusOK, account)
 }
 
+func (s *APIServer) handleUpdateAccount(w http.ResponseWriter, r *http.Request) error {
+	id, err := getIdFromQueryParams(r)
+
+	if err != nil {
+		return fmt.Errorf("invalid id given %d", id)
+	}
+
+	account, err := s.store.GetAccountById(id)
+
+	if err != nil {
+		return err
+	}
+
+	accountRequest := new(AccountRequest)
+
+	if err := json.NewDecoder(r.Body).Decode(accountRequest); err != nil {
+		return err
+	}
+
+	account.FirstName = accountRequest.FirstName
+	account.LastName = accountRequest.LastName
+
+	if err := s.store.UpdateAccount(account); err != nil {
+		return err
+	}
+
+	return writeJSON(w, http.StatusOK, account)
+}
+
+func (s *APIServer) handleGetAccountById(w http.ResponseWriter, r *http.Request) error {
+	id, err := getIdFromQueryParams(r)
+
+	if err != nil {
+		return fmt.Errorf("invalid id given %d", id)
+	}
+
+	account, err := s.store.GetAccountById(id)
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(id)
+
+	return writeJSON(w, http.StatusOK, account)
+}
+
 func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) error {
-	return nil
+	id, err := getIdFromQueryParams(r)
+
+	if err != nil {
+		return fmt.Errorf("invalid id given %d", id)
+	}
+
+	if err := s.store.DeleteAccount(id); err != nil {
+		return err
+	}
+
+	return writeJSON(w, http.StatusOK, id)
 }
 
 func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error {
@@ -131,4 +186,15 @@ func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error
 	defer r.Body.Close()
 
 	return writeJSON(w, http.StatusOK, transferRequest)
+}
+
+func getIdFromQueryParams(r *http.Request) (int, error) {
+	idStr := mux.Vars(r)["id"]
+	id, err := strconv.Atoi(idStr)
+
+	if err != nil {
+		return -1, err
+	}
+
+	return id, nil
 }
