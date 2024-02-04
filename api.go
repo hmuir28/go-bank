@@ -49,6 +49,7 @@ func NewAPIServer(listenAddr string, store Storage) *APIServer {
 func (s *APIServer) Run() {
 	router := mux.NewRouter()
 
+	router.HandleFunc("/login", makeHttpHandleFunc(s.handleLogin))
 	router.HandleFunc("/account", makeHttpHandleFunc(s.handleAccount))
 	router.HandleFunc("/account/{id}", withJwtAuth(makeHttpHandleFunc(s.handleAccountById), s.store))
 	router.HandleFunc("/transfer", makeHttpHandleFunc(s.handleTransfer))
@@ -58,6 +59,43 @@ func (s *APIServer) Run() {
 	http.ListenAndServe(s.listenAddr, router)
 }
 
+func (s *APIServer) handleLogin(w http.ResponseWriter, r *http.Request) error {
+	if r.Method != "POST" {
+		return fmt.Errorf("method not allowed")
+	}
+
+	var req LoginRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return err
+	}
+
+	acc, err := s.store.GetAccountByNumber(int(req.Number))
+
+	if err != nil {
+		return err
+	}
+
+	if !acc.ValidPassword(req.Password) {
+		return fmt.Errorf("invalid credentials")
+	}
+
+	token, err := createJwt(acc)
+
+	if err != nil {
+		return err
+	}
+
+	resp := LoginResponse{
+		Token:  token,
+		Number: acc.Number,
+	}
+
+	fmt.Printf("%+v \n", resp)
+
+	return writeJSON(w, http.StatusOK, resp)
+}
+
 func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == "GET" {
 		return s.handleGetAccount(w, r)
@@ -65,10 +103,6 @@ func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error 
 
 	if r.Method == "POST" {
 		return s.handleCreateAccount(w, r)
-	}
-
-	if r.Method == "DELETE" {
-		return s.handleDeleteAccount(w, r)
 	}
 
 	return fmt.Errorf("method not allowed %s", r.Method)
@@ -107,7 +141,11 @@ func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 		return err
 	}
 
-	account := NewAccount(createAccountRequest.FirstName, createAccountRequest.LastName)
+	account, err := NewAccount(createAccountRequest.FirstName, createAccountRequest.LastName, createAccountRequest.Password)
+
+	if err != nil {
+		return err
+	}
 
 	if err := s.store.CreateAccount(account); err != nil {
 		return err
