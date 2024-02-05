@@ -25,7 +25,7 @@ func NewPostgresStore() (*PostgresStore, error) {
 	username := os.Getenv("POSTGRES_USERNAME")
 	password := os.Getenv("POSTGRES_PASSWORD")
 
-	connStr := "user=postgres dbname=" + username + "password=" + password + "sslmode=disable"
+	connStr := "user=postgres dbname=" + username + " password=" + password + " sslmode=disable"
 
 	db, err := sql.Open("postgres", connStr)
 
